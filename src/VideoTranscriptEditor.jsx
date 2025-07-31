@@ -186,10 +186,11 @@ const VideoTranscriptEditor = () => {
         throw new Error('Invalid response from server: ' + JSON.stringify(processResult));
       }
       
-      // Step 3: Update UI with real results
-      const transcriptData = processResult.transcript || processResult || [];
+      // Step 3: Update UI with real results  
+      const transcriptData = processResult.transcript?.segments || processResult.transcript || processResult || [];
       console.log('✅ Processing complete. Transcript data:', transcriptData);
       console.log('📊 Transcript array length:', Array.isArray(transcriptData) ? transcriptData.length : 'Not an array');
+      console.log('📋 First segment sample:', transcriptData[0]);
       
       setProcessingFiles([{ ...file, status: 'completed', progress: 100 }]);
       
