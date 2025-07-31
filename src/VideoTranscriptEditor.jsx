@@ -15,6 +15,7 @@ const VideoTranscriptEditor = () => {
   const [sortOrder, setSortOrder] = useState('asc');
   const [viewMode, setViewMode] = useState('sentences'); // 'words', 'sentences'
   const [selectedItems, setSelectedItems] = useState(new Set());
+  const [selectedWords, setSelectedWords] = useState(new Set());
   const [showTopics, setShowTopics] = useState(false);
   const [user, setUser] = useState(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -178,7 +179,8 @@ const VideoTranscriptEditor = () => {
       setProcessingFiles([{ ...file, status: 'completed', progress: 100 }]);
       
       // Set the real transcript data from AI
-      setTranscriptData(processResult.transcript);
+      console.log('📋 Setting transcript data:', processResult.transcript);
+      setTranscriptData(processResult.transcript || []);
       setCurrentScreen('editor');
       
     } catch (error) {
@@ -222,8 +224,24 @@ const VideoTranscriptEditor = () => {
   };
 
   const deleteSelectedItems = () => {
-    setTranscriptData(prev => prev.filter(item => !selectedItems.has(item.id)));
-    setSelectedItems(new Set());
+    if (viewMode === 'sentences') {
+      setTranscriptData(prev => prev.filter(item => !selectedItems.has(item.id)));
+      setSelectedItems(new Set());
+    } else {
+      // Word-level deletion - remove selected words from segments
+      setTranscriptData(prev => prev.map(segment => {
+        if (segment.words && segment.words.length > 0) {
+          const remainingWords = segment.words.filter(word => !selectedWords.has(`${segment.id}-${word.start}`));
+          return {
+            ...segment,
+            words: remainingWords,
+            text: remainingWords.map(w => w.word).join(' ')
+          };
+        }
+        return segment;
+      }).filter(segment => segment.words && segment.words.length > 0));
+      setSelectedWords(new Set());
+    }
   };
 
   const toggleItemSelection = (id) => {
@@ -236,6 +254,129 @@ const VideoTranscriptEditor = () => {
       }
       return newSet;
     });
+  };
+
+  const toggleWordSelection = (segmentId, wordStart) => {
+    const wordId = `${segmentId}-${wordStart}`;
+    setSelectedWords(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(wordId)) {
+        newSet.delete(wordId);
+      } else {
+        newSet.add(wordId);
+      }
+      return newSet;
+    });
+  };
+
+  const getSpeakerColor = (speaker) => {
+    const colors = {
+      'SPEAKER_00': { bg: 'rgba(174, 109, 240, 0.2)', color: '#7c3aed' },
+      'SPEAKER_01': { bg: 'rgba(175, 240, 109, 0.2)', color: '#65a30d' },
+      'SPEAKER_02': { bg: 'rgba(109, 240, 240, 0.2)', color: '#0891b2' },
+      'unknown': { bg: 'rgba(128, 128, 128, 0.2)', color: '#6b7280' }
+    };
+    return colors[speaker] || colors['unknown'];
+  };
+
+  // Render word-level view
+  const renderWordView = () => {
+    if (!transcriptData || transcriptData.length === 0) {
+      return (
+        <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+          No transcript data available
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ padding: '20px', maxHeight: '500px', overflowY: 'auto' }}>
+        {transcriptData.map((segment) => (
+          <div key={segment.id} style={{
+            marginBottom: '20px',
+            padding: '15px',
+            backgroundColor: selectedItems.has(segment.id) ? 'rgba(174, 109, 240, 0.1)' : '#f9f9f9',
+            borderRadius: '8px',
+            border: '1px solid #e0e0e0'
+          }}>
+            <div className="flex items-center gap-3" style={{ marginBottom: '10px' }}>
+              <input
+                type="checkbox"
+                checked={selectedItems.has(segment.id)}
+                onChange={() => toggleItemSelection(segment.id)}
+                style={{ accentColor: '#ae6df0' }}
+              />
+              <button
+                onClick={() => seekToTime(segment.start)}
+                style={{
+                  color: '#ae6df0',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                {formatTime(segment.start)} → {formatTime(segment.end)}
+              </button>
+              <span style={{
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: '400',
+                ...getSpeakerColor(segment.speaker)
+              }}>
+                {segment.speaker}
+              </span>
+            </div>
+            
+            <div style={{ lineHeight: '2', fontSize: '16px' }}>
+              {segment.words && segment.words.length > 0 ? (
+                segment.words.map((word, wordIndex) => {
+                  const wordId = `${segment.id}-${word.start}`;
+                  const isSelected = selectedWords.has(wordId);
+                  const speakerColors = getSpeakerColor(word.speaker || segment.speaker);
+                  
+                  return (
+                    <span
+                      key={`${segment.id}-${wordIndex}`}
+                      onClick={() => toggleWordSelection(segment.id, word.start)}
+                      style={{
+                        display: 'inline-block',
+                        margin: '2px',
+                        padding: '4px 6px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        backgroundColor: isSelected ? '#ef4444' : speakerColors.bg,
+                        color: isSelected ? 'white' : speakerColors.color,
+                        border: isSelected ? '1px solid #dc2626' : '1px solid transparent',
+                        transition: 'all 0.2s ease'
+                      }}
+                      title={`${formatTime(word.start)} - ${formatTime(word.end)} (${word.speaker || segment.speaker})`}
+                    >
+                      {word.word}
+                    </span>
+                  );
+                })
+              ) : (
+                // Fallback for segments without word data
+                <span style={{
+                  display: 'inline-block',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: getSpeakerColor(segment.speaker).bg,
+                  color: getSpeakerColor(segment.speaker).color
+                }}>
+                  {segment.text}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const exportVideo = (format = 'video') => {
@@ -987,7 +1128,7 @@ const VideoTranscriptEditor = () => {
                     </div>
                     
                     <div className="flex gap-2">
-                      {selectedItems.size > 0 && (
+                      {(selectedItems.size > 0 || selectedWords.size > 0) && (
                         <button
                           onClick={deleteSelectedItems}
                           style={{
@@ -1002,7 +1143,7 @@ const VideoTranscriptEditor = () => {
                           }}
                         >
                           <Trash2 size={14} style={{ marginRight: '4px', display: 'inline' }} />
-                          Delete ({selectedItems.size})
+                          Delete ({viewMode === 'sentences' ? selectedItems.size : selectedWords.size})
                         </button>
                       )}
                       <button
@@ -1043,6 +1184,9 @@ const VideoTranscriptEditor = () => {
                   </div>
                 </div>
 
+                {viewMode === 'words' ? (
+                  renderWordView()
+                ) : (
                 <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead style={{ 
@@ -1069,6 +1213,7 @@ const VideoTranscriptEditor = () => {
                                 setSelectedItems(new Set());
                               }
                             }}
+                            checked={transcriptData.length > 0 && selectedItems.size === transcriptData.length}
                             style={{ accentColor: '#ae6df0' }}
                           />
                         </th>
@@ -1124,7 +1269,7 @@ const VideoTranscriptEditor = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {transcriptData.map((item, index) => (
+                      {transcriptData && transcriptData.length > 0 ? transcriptData.map((item, index) => (
                         <tr 
                           key={item.id} 
                           className="table-row"
@@ -1181,16 +1326,7 @@ const VideoTranscriptEditor = () => {
                               borderRadius: '4px',
                               fontSize: '12px',
                               fontWeight: '400',
-                              backgroundColor: 
-                                item.speaker === 'S1' ? 'rgba(174, 109, 240, 0.2)' : 
-                                item.speaker === 'S2' ? 'rgba(175, 240, 109, 0.2)' :
-                                item.speaker === 'S3' ? 'rgba(109, 240, 240, 0.2)' :
-                                'rgba(128, 128, 128, 0.2)',
-                              color: 
-                                item.speaker === 'S1' ? '#7c3aed' : 
-                                item.speaker === 'S2' ? '#65a30d' :
-                                item.speaker === 'S3' ? '#0891b2' :
-                                '#6b7280'
+                              ...getSpeakerColor(item.speaker)
                             }}>
                               {item.speaker}
                             </span>
@@ -1253,10 +1389,17 @@ const VideoTranscriptEditor = () => {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                          <td colSpan="7" style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+                            No transcript data available
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             </div>
           </div>
@@ -1438,7 +1581,7 @@ const VideoTranscriptEditor = () => {
                     fontWeight: '300',
                     lineHeight: '1.4'
                   }}>
-                    📊 Export will include {transcriptData.filter(item => !selectedItems.has(item.id)).length} segments 
+                    📊 Export will include {transcriptData ? transcriptData.filter(item => !selectedItems.has(item.id)).length : 0} segments 
                     ({selectedItems.size} segments removed)
                   </p>
                 </div>
