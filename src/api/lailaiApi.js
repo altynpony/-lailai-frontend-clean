@@ -83,13 +83,9 @@ export const lailaiApi = {
   },
 
   // Process video with Whisper and PyAnnote
-  async processVideo(videoPath, options = {}) {
+  async processVideo(filePath) {
     const requestData = {
-      video_path: videoPath,
-      whisper_model: options.whisperModel || 'base',
-      language: options.language || 'auto',
-      speaker_detection: options.speakerDetection !== false,
-      ...options
+      file_path: filePath
     };
 
     const response = await api.post(API_CONFIG.ENDPOINTS.PROCESS, requestData);

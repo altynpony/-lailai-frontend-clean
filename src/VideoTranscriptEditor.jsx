@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Play, Pause, Trash2, Download, Settings, User, CreditCard, FileText, MessageSquare, Clock, Volume2, Edit3, Save, Filter, SortAsc, SortDesc, Folder, File, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import lailaiApi from './api/lailaiApi';
 
 const VideoTranscriptEditor = () => {
   const [currentScreen, setCurrentScreen] = useState('upload'); // 'upload', 'editor', 'account'
@@ -25,6 +26,8 @@ const VideoTranscriptEditor = () => {
     exportQuality: 'high',
     outputFormat: 'mp4'
   });
+  const [apiError, setApiError] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
@@ -137,42 +140,56 @@ const VideoTranscriptEditor = () => {
     setFiles(prev => [...prev, ...newFiles]);
   };
 
-  const processFiles = () => {
-    setProcessingFiles(files.map(f => ({ ...f, status: 'processing', progress: 0 })));
+  const processFiles = async () => {
+    if (files.length === 0) return;
     
-    // Simulate processing
-    files.forEach((file, index) => {
-      setTimeout(() => {
-        const interval = setInterval(() => {
-          setProcessingFiles(prev => 
-            prev.map(f => 
-              f.id === file.id 
-                ? { ...f, progress: Math.min(f.progress + 10, 100) }
-                : f
-            )
-          );
-        }, 500);
-
-        setTimeout(() => {
-          clearInterval(interval);
-          setProcessingFiles(prev => 
-            prev.map(f => 
-              f.id === file.id 
-                ? { ...f, status: 'completed', progress: 100 }
-                : f
-            )
-          );
-          
-          if (index === files.length - 1) {
-            setTimeout(() => {
-              setTranscriptData(mockTranscript);
-              setCurrentVideoUrl('https://www.w3schools.com/html/mov_bbb.mp4');
-              setCurrentScreen('editor');
-            }, 1000);
-          }
-        }, 5000);
-      }, index * 1000);
-    });
+    setIsProcessing(true);
+    setApiError(null);
+    
+    try {
+      // Process the first file for now (you can extend this for multiple files)
+      const file = files[0];
+      
+      // Update UI to show upload progress
+      setProcessingFiles([{ ...file, status: 'uploading', progress: 0 }]);
+      
+      // Step 1: Upload file to backend
+      console.log('📤 Uploading file:', file.name);
+      const uploadResult = await lailaiApi.uploadVideo(file.file, (progress) => {
+        setProcessingFiles([{ ...file, status: 'uploading', progress: Math.round(progress) }]);
+      });
+      
+      if (!uploadResult.success) {
+        throw new Error('Upload failed');
+      }
+      
+      // Step 2: Process with AI
+      console.log('🤖 Processing with AI:', uploadResult.file_path);
+      setProcessingFiles([{ ...file, status: 'processing', progress: 0 }]);
+      
+      const processResult = await lailaiApi.processVideo(uploadResult.file_path);
+      
+      if (!processResult.success) {
+        throw new Error('Processing failed: ' + processResult.error);
+      }
+      
+      // Step 3: Update UI with real results
+      console.log('✅ Processing complete:', processResult.transcript);
+      setProcessingFiles([{ ...file, status: 'completed', progress: 100 }]);
+      
+      // Set the real transcript data from AI
+      setTranscriptData(processResult.transcript);
+      setCurrentScreen('editor');
+      
+    } catch (error) {
+      console.error('❌ Processing error:', error);
+      setApiError(error.message);
+      setProcessingFiles(prev => 
+        prev.map(f => ({ ...f, status: 'failed', progress: 0 }))
+      );
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDrop = (e) => {
@@ -568,6 +585,42 @@ const VideoTranscriptEditor = () => {
             </div>
           )}
 
+          {apiError && (
+            <div className="bg-white card-shadow" style={{ 
+              marginTop: '40px', 
+              borderRadius: '12px', 
+              padding: '30px',
+              border: '1px solid #ef4444'
+            }}>
+              <h3 style={{ 
+                fontSize: '18px', 
+                fontWeight: '400', 
+                marginBottom: '15px',
+                color: '#ef4444'
+              }}>
+                Processing Error
+              </h3>
+              <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
+                {apiError}
+              </p>
+              <button
+                onClick={() => setApiError(null)}
+                style={{
+                  marginTop: '15px',
+                  padding: '8px 16px',
+                  backgroundColor: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {processingFiles.length > 0 && (
             <div className="bg-white card-shadow" style={{ 
               marginTop: '40px', 
@@ -580,7 +633,7 @@ const VideoTranscriptEditor = () => {
                 marginBottom: '30px',
                 color: '#333'
               }}>
-                Processing Files
+                {isProcessing ? 'Processing with AI...' : 'Processing Files'}
               </h3>
               <div style={{ display: 'grid', gap: '20px' }}>
                 {processingFiles.map(file => (
@@ -590,10 +643,15 @@ const VideoTranscriptEditor = () => {
                         {file.name}
                       </span>
                       <div className="flex items-center gap-2">
+                        {file.status === 'uploading' && <Upload size={16} style={{ color: '#ae6df0' }} />}
                         {file.status === 'processing' && <AlertCircle size={16} style={{ color: '#ae6df0' }} />}
                         {file.status === 'completed' && <CheckCircle size={16} style={{ color: '#aff06d' }} />}
+                        {file.status === 'failed' && <XCircle size={16} style={{ color: '#ef4444' }} />}
                         <span style={{ fontSize: '14px', fontWeight: '300' }}>
-                          {file.progress}%
+                          {file.status === 'uploading' ? 'Uploading...' : 
+                           file.status === 'processing' ? 'AI Processing...' :
+                           file.status === 'failed' ? 'Failed' : 
+                           `${file.progress}%`}
                         </span>
                       </div>
                     </div>
