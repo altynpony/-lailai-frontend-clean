@@ -187,13 +187,7 @@ const VideoTranscriptEditor = () => {
       }
       
       // Step 3: Update UI with real results  
-      let transcriptData = processResult.transcript?.segments || processResult.transcript || processResult || [];
-      
-      // Handle case where transcript is an object with segments property
-      if (transcriptData && !Array.isArray(transcriptData) && transcriptData.segments) {
-        transcriptData = transcriptData.segments;
-      }
-      
+      const transcriptData = processResult.transcript?.segments || processResult.transcript || processResult || [];
       console.log('✅ Processing complete. Transcript data:', transcriptData);
       console.log('📊 Transcript array length:', Array.isArray(transcriptData) ? transcriptData.length : 'Not an array');
       console.log('📋 First segment sample:', transcriptData[0]);
