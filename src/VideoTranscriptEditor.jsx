@@ -187,9 +187,35 @@ const VideoTranscriptEditor = () => {
       }
       
       // Step 3: Update UI with real results  
-      const transcriptData = processResult.transcript?.segments || processResult.transcript || processResult || [];
+      let transcriptData = [];
+      
+      // Handle different response formats
+      if (processResult.transcript && Array.isArray(processResult.transcript.segments)) {
+        // Format: { transcript: { segments: [...] } }
+        transcriptData = processResult.transcript.segments;
+      } else if (Array.isArray(processResult.transcript)) {
+        // Format: { transcript: [...] }
+        transcriptData = processResult.transcript;
+      } else if (Array.isArray(processResult.segments)) {
+        // Format: { segments: [...] }
+        transcriptData = processResult.segments;
+      } else if (Array.isArray(processResult)) {
+        // Format: [...]
+        transcriptData = processResult;
+      }
+      
+      // Add IDs if missing for frontend compatibility
+      transcriptData = transcriptData.map((segment, index) => ({
+        id: segment.id || index + 1,
+        text: segment.text || '',
+        start: segment.start || 0,
+        end: segment.end || 0,
+        speaker: segment.speaker || 'SPEAKER_00',
+        ...segment
+      }));
+      
       console.log('✅ Processing complete. Transcript data:', transcriptData);
-      console.log('📊 Transcript array length:', Array.isArray(transcriptData) ? transcriptData.length : 'Not an array');
+      console.log('📊 Transcript array length:', transcriptData.length);
       console.log('📋 First segment sample:', transcriptData[0]);
       
       setProcessingFiles([{ ...file, status: 'completed', progress: 100 }]);
