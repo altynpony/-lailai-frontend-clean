@@ -170,17 +170,31 @@ const VideoTranscriptEditor = () => {
       
       const processResult = await lailaiApi.processVideo(uploadResult.file_path);
       
-      if (!processResult.success) {
-        throw new Error('Processing failed: ' + processResult.error);
+      // Detailed logging for debugging
+      console.log('🔍 Full API Response:', processResult);
+      console.log('🔍 Response type:', typeof processResult);
+      console.log('🔍 Response keys:', Object.keys(processResult || {}));
+      console.log('🔍 Success field:', processResult?.success);
+      console.log('🔍 Error field:', processResult?.error);
+      console.log('🔍 Transcript field:', processResult?.transcript);
+      
+      if (processResult?.success === false) {
+        throw new Error('Processing failed: ' + (processResult.error || 'Unknown error'));
+      }
+      
+      if (!processResult || (!processResult.transcript && !processResult.success)) {
+        throw new Error('Invalid response from server: ' + JSON.stringify(processResult));
       }
       
       // Step 3: Update UI with real results
-      console.log('✅ Processing complete:', processResult.transcript);
+      const transcriptData = processResult.transcript || processResult || [];
+      console.log('✅ Processing complete. Transcript data:', transcriptData);
+      console.log('📊 Transcript array length:', Array.isArray(transcriptData) ? transcriptData.length : 'Not an array');
+      
       setProcessingFiles([{ ...file, status: 'completed', progress: 100 }]);
       
       // Set the real transcript data from AI
-      console.log('📋 Setting transcript data:', processResult.transcript);
-      setTranscriptData(processResult.transcript || []);
+      setTranscriptData(transcriptData);
       setCurrentScreen('editor');
       
     } catch (error) {

@@ -26,10 +26,14 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => {
     console.log(`API Response: ${response.status} ${response.config.url}`);
+    console.log('Response data:', response.data);
     return response;
   },
   (error) => {
     console.error('API Response Error:', error);
+    console.error('Error response:', error.response?.data);
+    console.error('Error status:', error.response?.status);
+    console.error('Error message:', error.message);
     
     if (error.code === 'ECONNREFUSED') {
       throw new Error('Cannot connect to LaiLai API server. Please check if the backend is running.');
@@ -40,7 +44,8 @@ api.interceptors.response.use(
     }
     
     if (error.response?.status >= 500) {
-      throw new Error('Server error occurred. Please try again later.');
+      const serverError = error.response?.data?.error || 'Server error occurred';
+      throw new Error(`Server error (${error.response.status}): ${serverError}`);
     }
     
     throw error;
