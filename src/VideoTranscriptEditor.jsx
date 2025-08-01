@@ -29,6 +29,8 @@ const VideoTranscriptEditor = () => {
   });
   const [apiError, setApiError] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentVideoPath, setCurrentVideoPath] = useState('');
+  const [exportJob, setExportJob] = useState(null);
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
@@ -163,6 +165,9 @@ const VideoTranscriptEditor = () => {
       if (!uploadResult.success) {
         throw new Error('Upload failed');
       }
+      
+      // Store the video path for export
+      setCurrentVideoPath(uploadResult.file_path);
       
       // Step 2: Process with AI
       console.log('🤖 Processing with AI:', uploadResult.file_path);
@@ -425,13 +430,39 @@ const VideoTranscriptEditor = () => {
     setShowExportModal(true);
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportData = transcriptData.filter(item => !selectedItems.has(item.id));
     
     if (exportFormat === 'video') {
       console.log('Exporting edited video with segments:', exportData);
       console.log('Export settings:', exportSettings);
-      alert('Video export started! Your edited video will be ready shortly.');
+      
+      try {
+        // Call the real video export API
+        const response = await lailaiApi.exportVideo({
+          segments: exportData,
+          export_settings: {
+            pause_threshold: 2.0,
+            exportQuality: exportSettings.exportQuality,
+            includeTransitions: exportSettings.includeTransitions,
+            fadeInOut: exportSettings.fadeInOut,
+            removeGaps: exportSettings.removeGaps
+          },
+          input_video_path: currentVideoPath, // We need to store this from upload
+          original_filename: files[0]?.name || 'video'
+        });
+        
+        if (response.success) {
+          // Start polling for export status
+          pollExportStatus(response.job_id);
+          alert(`Video export started! Job ID: ${response.job_id}\nYou can check the progress in the console.`);
+        } else {
+          alert(`Export failed: ${response.error}`);
+        }
+      } catch (error) {
+        console.error('Export error:', error);
+        alert(`Export failed: ${error.message}`);
+      }
     } else if (exportFormat === 'xml') {
       const xmlContent = generateFinalCutXML(exportData);
       downloadFile(xmlContent, 'project.fcpxml', 'application/xml');
@@ -444,6 +475,34 @@ const VideoTranscriptEditor = () => {
     }
     
     setShowExportModal(false);
+  };
+
+  const pollExportStatus = async (jobId) => {
+    const checkStatus = async () => {
+      try {
+        const status = await lailaiApi.checkExportStatus(jobId);
+        console.log(`Export status: ${status.status} - ${status.message} (${status.progress}%)`);
+        
+        setExportJob(status);
+        
+        if (status.status === 'completed') {
+          console.log('🎬 Export completed! Ready for download.');
+          alert('Video export completed! Check console for download link.');
+          // You could automatically trigger download here
+        } else if (status.status === 'failed') {
+          console.error('❌ Export failed:', status.error);
+          alert(`Export failed: ${status.error}`);
+        } else {
+          // Continue polling
+          setTimeout(checkStatus, 3000); // Check every 3 seconds
+        }
+      } catch (error) {
+        console.error('Error checking export status:', error);
+        setTimeout(checkStatus, 5000); // Retry in 5 seconds
+      }
+    };
+    
+    checkStatus();
   };
 
   const generateFinalCutXML = (segments) => {
